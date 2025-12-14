@@ -72,7 +72,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Colors
 GREEN = '#22c55e'
 RED = '#ef4444'
 BLUE = '#3b82f6'
@@ -84,10 +83,12 @@ LABELS = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y']
 def load_data(tickers, start):
     try:
         data = yf.download(tickers, start, auto_adjust=True, progress=False)
+        if data.empty:
+            return pd.DataFrame()
         close = data['Close'] if 'Close' in data.columns else data
         if isinstance(close, pd.Series):
             close = close.to_frame(name=tickers[0] if isinstance(tickers, list) else tickers)
-        return close
+        return close.dropna(how='all')
     except:
         return pd.DataFrame()
 
@@ -105,25 +106,20 @@ def calc_probs(returns, periods):
 
 
 def chart_area(df, ticker):
-    """Single area chart - win probability only"""
     labels = LABELS[:len(df)]
     
     fig = go.Figure()
     
-    # Gradient fill area
     fig.add_trace(go.Scatter(
         x=labels, y=df['win'],
         mode='lines',
         line=dict(color=GREEN, width=3),
         fill='tozeroy',
-        fillgradient=dict(
-            type='vertical',
-            colorscale=[[0, 'rgba(34, 197, 94, 0.05)'], [1, 'rgba(34, 197, 94, 0.3)']]
-        ),
-        hovertemplate='<b>%{x}</b><br>Win: %{y:.1f}%<extra></extra>'
+        fillcolor='rgba(34, 197, 94, 0.15)',
+        hovertemplate='<b>%{x}</b><br>Win: %{y:.1f}%<extra></extra>',
+        showlegend=False
     ))
     
-    # Add markers on top
     fig.add_trace(go.Scatter(
         x=labels, y=df['win'],
         mode='markers',
@@ -132,7 +128,6 @@ def chart_area(df, ticker):
         showlegend=False
     ))
     
-    # 50% reference line
     fig.add_hline(y=50, line=dict(color='#3f3f46', width=1, dash='dot'),
                   annotation_text="50%", annotation_position="right",
                   annotation=dict(font_color='#52525b', font_size=10))
@@ -147,7 +142,6 @@ def chart_area(df, ticker):
         yaxis=dict(title='Probability (%)', range=[0, 105], gridcolor=GRID, linecolor='#27272a',
                    tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
         height=400,
-        showlegend=False,
         hovermode='x unified',
         hoverlabel=dict(bgcolor='#18181b', font_size=12, font_family='IBM Plex Sans')
     )
@@ -155,18 +149,14 @@ def chart_area(df, ticker):
 
 
 def chart_heatmap_strip(df):
-    """Horizontal heatmap strip - visual summary"""
     labels = LABELS[:len(df)]
     probs = df['win'].values
     
-    # Create color scale from red to green through neutral
     def prob_to_color(p):
         if p < 50:
-            # Red zone
             intensity = (50 - p) / 50
             return f'rgba(239, 68, 68, {0.3 + intensity * 0.7})'
         else:
-            # Green zone
             intensity = (p - 50) / 50
             return f'rgba(34, 197, 94, {0.3 + intensity * 0.7})'
     
@@ -199,9 +189,6 @@ def chart_heatmap_strip(df):
 
 
 def chart_slope(data, tickers, periods_to_show):
-    """Slope chart - multi-asset comparison across time horizons"""
-    
-    # Calculate probabilities for each ticker at each period
     results = []
     for t in tickers:
         if t in data.columns:
@@ -221,7 +208,6 @@ def chart_slope(data, tickers, periods_to_show):
     period_labels = {1: '1D', 5: '1W', 20: '1M', 60: '3M', 120: '6M', 
                      252: '1Y', 504: '2Y', 1260: '5Y', 2520: '10Y'}
     
-    # Color palette for multiple tickers
     palette = ['#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16']
     
     fig = go.Figure()
@@ -231,7 +217,6 @@ def chart_slope(data, tickers, periods_to_show):
         x_labels = [period_labels.get(p, f'{p}D') for p in ticker_data['period']]
         color = palette[i % len(palette)]
         
-        # Line
         fig.add_trace(go.Scatter(
             x=x_labels, y=ticker_data['win'],
             mode='lines+markers',
@@ -241,14 +226,13 @@ def chart_slope(data, tickers, periods_to_show):
             hovertemplate=f'<b>{ticker}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>'
         ))
     
-    # 50% reference
     fig.add_hline(y=50, line=dict(color='#3f3f46', width=1, dash='dot'))
     
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
         margin=dict(l=50, r=30, t=40, b=50),
-        title=dict(text='Win Probability by Asset', font=dict(size=14, color='#a1a1aa'), x=0, xanchor='left'),
+        title=dict(text='Win Probability Comparison', font=dict(size=14, color='#a1a1aa'), x=0, xanchor='left'),
         xaxis=dict(title='Holding Period', gridcolor=GRID, linecolor='#27272a',
                    tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
         yaxis=dict(title='Probability (%)', range=[30, 105], gridcolor=GRID, linecolor='#27272a',
@@ -291,14 +275,19 @@ with c3:
 # Load data
 data = load_data(tickers, f'{year}-01-01')
 
-if data.empty or main_ticker not in data.columns:
-    st.error("Could not load data. Check tickers.")
+# Validation
+if data.empty:
+    st.error("Could not load data. Check your tickers.")
+    st.stop()
+
+if main_ticker not in data.columns:
+    st.error(f"No data found for **{main_ticker}**. Try a different ticker.")
     st.stop()
 
 returns = data[main_ticker].pct_change().dropna()
 
-if len(returns) < 20:
-    st.error("Not enough data.")
+if len(returns) < 252:
+    st.error(f"Not enough data for **{main_ticker}** (need at least 1 year). Try an earlier start date or different ticker.")
     st.stop()
 
 # Calculate
@@ -320,16 +309,16 @@ p10y = get_p(2520)
 years_data = len(returns) / 252
 
 # Metrics
-m1 = f"{p1y:.1f}%" if p1y is not None else "N/A"
-m5 = f"{p5y:.1f}%" if p5y is not None else "N/A"
-m10 = f"{p10y:.1f}%" if p10y is not None else "N/A"
+m1 = f"{p1y:.1f}%" if p1y is not None else "—"
+m5 = f"{p5y:.1f}%" if p5y is not None else "—"
+m10 = f"{p10y:.1f}%" if p10y is not None else "—"
 
 st.markdown(f'''
 <div class="metrics">
     <div class="metric-box"><div class="metric-label">1 Year</div><div class="metric-val green">{m1}</div></div>
     <div class="metric-box"><div class="metric-label">5 Years</div><div class="metric-val green">{m5}</div></div>
     <div class="metric-box"><div class="metric-label">10 Years</div><div class="metric-val green">{m10}</div></div>
-    <div class="metric-box"><div class="metric-label">Data</div><div class="metric-val blue">{years_data:.0f} yrs</div></div>
+    <div class="metric-box"><div class="metric-label">Data</div><div class="metric-val blue">{years_data:.1f} yrs</div></div>
 </div>
 ''', unsafe_allow_html=True)
 
@@ -348,23 +337,34 @@ if p1y is not None and p10y is not None:
     st.markdown(f'''
     <div class="insight">
         <div class="insight-text">
-            Holding <strong>{main_ticker}</strong> for 10 years instead of 1 year increases your probability of profit 
+            Holding <strong>{main_ticker}</strong> for 10 years instead of 1 year increases your win probability 
             from <strong>{p1y:.1f}%</strong> to <strong>{p10y:.1f}%</strong> — 
-            a <strong>+{improvement:.1f}pp</strong> improvement. Time in the market reduces risk.
+            a <strong>+{improvement:.1f}pp</strong> improvement. Time in the market beats timing the market.
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+elif p1y is not None and p5y is not None:
+    improvement = p5y - p1y
+    st.markdown(f'''
+    <div class="insight">
+        <div class="insight-text">
+            Holding <strong>{main_ticker}</strong> for 5 years instead of 1 year increases your win probability 
+            from <strong>{p1y:.1f}%</strong> to <strong>{p5y:.1f}%</strong> — 
+            a <strong>+{improvement:.1f}pp</strong> improvement.
         </div>
     </div>
     ''', unsafe_allow_html=True)
 
-# Slope chart for multi-asset comparison
+# Slope chart
 if len(tickers) > 1:
-    st.markdown('<div class="section-head">Multi-Asset Comparison</div>', unsafe_allow_html=True)
+    valid_tickers = [t for t in tickers if t in data.columns and len(data[t].pct_change().dropna()) >= 252]
     
-    # Use key periods for cleaner visualization
-    key_periods = [p for p in [20, 252, 1260, 2520] if p <= len(returns) - 1]
-    
-    fig_slope = chart_slope(data, tickers, key_periods)
-    if fig_slope is not None:
-        st.plotly_chart(fig_slope, use_container_width=True, config={'displayModeBar': False})
+    if len(valid_tickers) > 1:
+        st.markdown('<div class="section-head">Multi-Asset Comparison</div>', unsafe_allow_html=True)
+        key_periods = [p for p in [20, 252, 1260, 2520] if p <= len(returns) - 1]
+        fig_slope = chart_slope(data, valid_tickers, key_periods)
+        if fig_slope is not None:
+            st.plotly_chart(fig_slope, use_container_width=True, config={'displayModeBar': False})
 
 # Footer
 st.markdown('<div class="foot"><a href="https://bquantfinance.com" target="_blank">bquantfinance.com</a> · <a href="https://twitter.com/Gsnchez" target="_blank">@Gsnchez</a></div>', unsafe_allow_html=True)

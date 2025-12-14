@@ -1,427 +1,406 @@
 # -*- coding: utf-8 -*-
 """
-Win/Loss Probability Calculator - Demonstrating the Sum vs. Product Error
-A visual exploration of why summing returns is mathematically incorrect
+Probabilidad de Ganancia/Pérdida en los Mercados
+Desarrollado por bquantfinance.com | @Gsnchez
 """
 
 import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
 import yfinance as yf
+import warnings
+
+warnings.filterwarnings('ignore')
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PAGE CONFIG & CUSTOM STYLING
+# CONFIGURACIÓN
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="Return Compounding Explorer",
+    page_title="Probabilidad de Ganancia | BQuant Finance",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom dark theme CSS
+# CSS personalizado
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
     
     :root {
-        --bg-primary: #0a0a0f;
-        --bg-secondary: #12121a;
-        --bg-card: #1a1a24;
-        --accent-green: #00ff88;
-        --accent-red: #ff3366;
-        --accent-blue: #00d4ff;
-        --accent-purple: #a855f7;
-        --text-primary: #ffffff;
-        --text-secondary: #8b8b9e;
-        --border-color: #2a2a3a;
+        --bg-primary: #0b0b0f;
+        --bg-card: #13131a;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+        --accent-cyan: #06b6d4;
+        --text-primary: #f1f5f9;
+        --text-muted: #64748b;
+        --border: #1e293b;
     }
     
     .stApp {
-        background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        background: var(--bg-primary);
     }
     
     .main .block-container {
         padding-top: 2rem;
-        max-width: 1400px;
+        padding-bottom: 2rem;
+        max-width: 1200px;
     }
     
-    h1, h2, h3 {
-        font-family: 'Space Grotesk', sans-serif !important;
-        font-weight: 700 !important;
-    }
-    
-    p, span, label, .stMarkdown {
-        font-family: 'Space Grotesk', sans-serif !important;
+    h1, h2, h3, p, span, label {
+        font-family: 'Inter', sans-serif !important;
     }
     
     code {
         font-family: 'JetBrains Mono', monospace !important;
     }
     
-    /* Hero title styling */
+    .hero-container {
+        text-align: center;
+        padding: 2rem 0 3rem 0;
+    }
+    
     .hero-title {
-        font-size: 3.5rem;
+        font-size: 2.75rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 50%, #a855f7 100%);
+        background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        text-align: center;
         margin-bottom: 0.5rem;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
     }
     
     .hero-subtitle {
-        font-size: 1.2rem;
-        color: var(--text-secondary);
-        text-align: center;
-        margin-bottom: 2rem;
-        font-weight: 300;
+        font-size: 1.1rem;
+        color: var(--text-muted);
+        font-weight: 400;
     }
     
-    /* Card styling */
+    .metric-row {
+        display: flex;
+        gap: 1rem;
+        margin: 1.5rem 0;
+    }
+    
     .metric-card {
-        background: linear-gradient(145deg, var(--bg-card) 0%, #15151f 100%);
-        border: 1px solid var(--border-color);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-    
-    .metric-value {
-        font-size: 2.5rem;
-        font-weight: 700;
-        font-family: 'JetBrains Mono', monospace;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        flex: 1;
     }
     
     .metric-label {
-        font-size: 0.9rem;
-        color: var(--text-secondary);
+        font-size: 0.75rem;
+        color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.25rem;
     }
     
-    .green { color: var(--accent-green); }
-    .red { color: var(--accent-red); }
-    .blue { color: var(--accent-blue); }
-    .purple { color: var(--accent-purple); }
-    
-    /* Error highlight box */
-    .error-box {
-        background: linear-gradient(145deg, rgba(255, 51, 102, 0.1) 0%, rgba(255, 51, 102, 0.05) 100%);
-        border: 1px solid rgba(255, 51, 102, 0.3);
-        border-left: 4px solid var(--accent-red);
-        border-radius: 8px;
-        padding: 1.2rem 1.5rem;
-        margin: 1rem 0;
+    .metric-value {
+        font-size: 1.75rem;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
     }
     
-    .correct-box {
-        background: linear-gradient(145deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 255, 136, 0.05) 100%);
-        border: 1px solid rgba(0, 255, 136, 0.3);
-        border-left: 4px solid var(--accent-green);
-        border-radius: 8px;
-        padding: 1.2rem 1.5rem;
-        margin: 1rem 0;
-    }
+    .metric-value.green { color: var(--accent-green); }
+    .metric-value.red { color: var(--accent-red); }
+    .metric-value.cyan { color: var(--accent-cyan); }
     
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background: var(--bg-secondary);
-        border-right: 1px solid var(--border-color);
-    }
-    
-    section[data-testid="stSidebar"] .stMarkdown h2 {
-        color: var(--accent-blue);
-    }
-    
-    /* Slider styling */
-    .stSlider > div > div {
-        background-color: var(--border-color) !important;
-    }
-    
-    .stSlider > div > div > div {
-        background: linear-gradient(90deg, var(--accent-green), var(--accent-blue)) !important;
-    }
-    
-    /* Selectbox and inputs */
-    .stSelectbox > div > div,
-    .stMultiSelect > div > div {
-        background-color: var(--bg-card) !important;
-        border-color: var(--border-color) !important;
-    }
-    
-    /* Divider */
-    .divider {
-        height: 1px;
-        background: linear-gradient(90deg, transparent, var(--border-color), transparent);
-        margin: 2rem 0;
-    }
-    
-    /* Formula box */
-    .formula-box {
-        background: var(--bg-card);
-        border: 1px solid var(--border-color);
+    .insight-box {
+        background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%);
+        border: 1px solid rgba(6, 182, 212, 0.2);
         border-radius: 12px;
         padding: 1.5rem;
-        font-family: 'JetBrains Mono', monospace;
-        text-align: center;
         margin: 1rem 0;
     }
     
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .insight-title {
+        color: var(--accent-cyan);
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    .insight-text {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+    
+    .footer {
+        text-align: center;
+        padding: 2rem 0;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .footer a {
+        color: var(--accent-cyan);
+        text-decoration: none;
+    }
+    
+    .footer a:hover {
+        text-decoration: underline;
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background: var(--bg-card);
+    }
+    
+    section[data-testid="stSidebar"] h2 {
+        color: var(--accent-cyan) !important;
+        font-size: 1rem !important;
+    }
+    
+    /* Hide Streamlit elements */
+    #MainMenu, footer, header {visibility: hidden;}
+    .stDeployButton {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOTLY THEME
+# COLORES Y TEMA
 # ═══════════════════════════════════════════════════════════════════════════════
-
-PLOTLY_THEME = {
-    'paper_bgcolor': 'rgba(0,0,0,0)',
-    'plot_bgcolor': 'rgba(0,0,0,0)',
-    'font': {'family': 'Space Grotesk, sans-serif', 'color': '#ffffff'},
-    'title': {'font': {'size': 20, 'color': '#ffffff'}},
-    'xaxis': {
-        'gridcolor': 'rgba(255,255,255,0.05)',
-        'linecolor': 'rgba(255,255,255,0.1)',
-        'tickfont': {'color': '#8b8b9e'},
-        'title': {'font': {'color': '#8b8b9e'}}
-    },
-    'yaxis': {
-        'gridcolor': 'rgba(255,255,255,0.05)',
-        'linecolor': 'rgba(255,255,255,0.1)',
-        'tickfont': {'color': '#8b8b9e'},
-        'title': {'font': {'color': '#8b8b9e'}}
-    }
-}
 
 COLORS = {
-    'green': '#00ff88',
-    'red': '#ff3366',
-    'blue': '#00d4ff',
-    'purple': '#a855f7',
-    'yellow': '#ffd700',
-    'orange': '#ff9500'
+    'green': '#10b981',
+    'red': '#ef4444',
+    'cyan': '#06b6d4',
+    'gray': '#64748b',
+    'bg': '#13131a'
 }
 
+def get_plotly_layout():
+    """Devuelve configuración base de Plotly"""
+    return dict(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, sans-serif', color='#f1f5f9', size=12),
+        margin=dict(l=60, r=40, t=60, b=60),
+        xaxis=dict(
+            gridcolor='rgba(255,255,255,0.03)',
+            linecolor='rgba(255,255,255,0.1)',
+            tickfont=dict(color='#64748b'),
+            title_font=dict(color='#64748b')
+        ),
+        yaxis=dict(
+            gridcolor='rgba(255,255,255,0.03)',
+            linecolor='rgba(255,255,255,0.1)',
+            tickfont=dict(color='#64748b'),
+            title_font=dict(color='#64748b')
+        ),
+        hoverlabel=dict(
+            bgcolor='#1e293b',
+            font_size=12,
+            font_family='Inter'
+        )
+    )
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# DATA FUNCTIONS
+# FUNCIONES DE DATOS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_data(tickers: list, start_date: str) -> pd.DataFrame:
-    """Load price data from Yahoo Finance"""
-    data = yf.download(tickers, start_date, auto_adjust=True, progress=False)['Close']
-    if isinstance(data, pd.Series):
-        data = data.to_frame(name=tickers[0])
-    return data
+def cargar_datos(tickers: list, fecha_inicio: str) -> pd.DataFrame:
+    """Cargar datos de Yahoo Finance"""
+    try:
+        data = yf.download(tickers, fecha_inicio, auto_adjust=True, progress=False)['Close']
+        if isinstance(data, pd.Series):
+            data = data.to_frame(name=tickers[0])
+        return data
+    except Exception:
+        return pd.DataFrame()
 
 
-def calculate_cumulative_returns(returns: pd.Series, window: int, method: str) -> pd.Series:
-    """Calculate cumulative returns using sum or product method"""
-    if method == 'sum':
-        return returns.rolling(window=window).sum().dropna()
-    else:  # product
-        return (1 + returns).rolling(window=window).apply(np.prod, raw=True).dropna() - 1
+def calcular_retornos_acumulados(retornos: pd.Series, ventana: int) -> pd.Series:
+    """Calcular retornos acumulados usando capitalización compuesta (método correcto)"""
+    return (1 + retornos).rolling(window=ventana).apply(np.prod, raw=True).dropna() - 1
 
 
-def calculate_win_probability(cumulative_returns: pd.Series) -> float:
-    """Calculate the probability of positive returns"""
-    return (cumulative_returns > 0).sum() / len(cumulative_returns) * 100
+def calcular_probabilidades(retornos: pd.Series, periodos: list) -> pd.DataFrame:
+    """Calcular probabilidades de ganancia/pérdida para cada periodo"""
+    resultados = []
+    
+    for periodo in periodos:
+        if len(retornos) >= periodo:
+            cum_ret = calcular_retornos_acumulados(retornos, periodo)
+            n_obs = len(cum_ret)
+            prob_gan = (cum_ret > 0).sum() / n_obs * 100
+            prob_per = 100 - prob_gan
+            ret_medio = cum_ret.mean() * 100
+            
+            resultados.append({
+                'periodo': periodo,
+                'prob_ganancia': round(prob_gan, 1),
+                'prob_perdida': round(prob_per, 1),
+                'retorno_medio': round(ret_medio, 2),
+                'n_observaciones': n_obs
+            })
+    
+    return pd.DataFrame(resultados)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# VISUALIZATION FUNCTIONS
+# VISUALIZACIONES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_comparison_chart(returns: pd.Series, periods: list, ticker: str) -> go.Figure:
-    """Create comparison chart of sum vs product probabilities"""
+def crear_grafico_probabilidades(df_prob: pd.DataFrame, ticker: str) -> go.Figure:
+    """Gráfico principal de probabilidades de ganancia/pérdida"""
     
-    sum_probs = []
-    prod_probs = []
-    
-    for period in periods:
-        sum_cum = calculate_cumulative_returns(returns, period, 'sum')
-        prod_cum = calculate_cumulative_returns(returns, period, 'product')
-        sum_probs.append(calculate_win_probability(sum_cum))
-        prod_probs.append(calculate_win_probability(prod_cum))
-    
-    period_labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y'][:len(periods)]
+    etiquetas = ['1D', '1S', '1M', '3M', '6M', '1A', '2A', '5A', '10A', '15A', '20A'][:len(df_prob)]
     
     fig = go.Figure()
     
-    # Add traces
+    # Área de ganancia
     fig.add_trace(go.Scatter(
-        x=period_labels,
-        y=sum_probs,
-        name='❌ Sum (Incorrect)',
-        mode='lines+markers',
-        line=dict(color=COLORS['red'], width=3),
-        marker=dict(size=12, symbol='x', line=dict(width=2)),
-        hovertemplate='<b>%{x}</b><br>Sum Method: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=period_labels,
-        y=prod_probs,
-        name='✓ Product (Correct)',
+        x=etiquetas,
+        y=df_prob['prob_ganancia'],
+        name='Ganancia',
         mode='lines+markers',
         line=dict(color=COLORS['green'], width=3),
-        marker=dict(size=12, symbol='circle', line=dict(width=2, color='#0a0a0f')),
-        hovertemplate='<b>%{x}</b><br>Product Method: %{y:.1f}%<extra></extra>'
+        marker=dict(size=10, color=COLORS['green'], line=dict(width=2, color='#0b0b0f')),
+        fill='tozeroy',
+        fillcolor='rgba(16, 185, 129, 0.15)',
+        hovertemplate='<b>%{x}</b><br>Prob. Ganancia: %{y:.1f}%<extra></extra>'
     ))
     
-    # Add error area
+    # Línea de pérdida
     fig.add_trace(go.Scatter(
-        x=period_labels + period_labels[::-1],
-        y=sum_probs + prod_probs[::-1],
-        fill='toself',
-        fillcolor='rgba(255, 51, 102, 0.15)',
-        line=dict(color='rgba(0,0,0,0)'),
-        name='Error Gap',
-        showlegend=True,
-        hoverinfo='skip'
+        x=etiquetas,
+        y=df_prob['prob_perdida'],
+        name='Pérdida',
+        mode='lines+markers',
+        line=dict(color=COLORS['red'], width=3),
+        marker=dict(size=10, color=COLORS['red'], line=dict(width=2, color='#0b0b0f')),
+        fill='tozeroy',
+        fillcolor='rgba(239, 68, 68, 0.1)',
+        hovertemplate='<b>%{x}</b><br>Prob. Pérdida: %{y:.1f}%<extra></extra>'
     ))
     
-    fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text=f'Win Probability by Holding Period — {ticker}', x=0.5),
-        xaxis_title='Holding Period',
-        yaxis_title='Win Probability (%)',
-        yaxis=dict(range=[40, 102], **PLOTLY_THEME['yaxis']),
+    # Línea de 50%
+    fig.add_hline(y=50, line=dict(color='#475569', width=1, dash='dot'))
+    
+    layout = get_plotly_layout()
+    layout.update(
+        title=dict(
+            text=f'Probabilidad de Ganancia vs Pérdida — {ticker}',
+            font=dict(size=18, color='#f1f5f9'),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis_title='Periodo de Tenencia',
+        yaxis_title='Probabilidad (%)',
+        yaxis=dict(**layout['yaxis'], range=[0, 105]),
+        height=480,
         legend=dict(
             orientation='h',
             yanchor='bottom',
             y=1.02,
             xanchor='center',
             x=0.5,
-            bgcolor='rgba(0,0,0,0)'
+            bgcolor='rgba(0,0,0,0)',
+            font=dict(size=12)
         ),
-        height=500,
         hovermode='x unified'
     )
+    fig.update_layout(**layout)
     
     return fig
 
 
-def create_error_magnitude_chart(returns: pd.Series, periods: list) -> go.Figure:
-    """Create bar chart showing error magnitude at each period"""
+def crear_heatmap(df_prob: pd.DataFrame, ticker: str) -> go.Figure:
+    """Mapa de calor de probabilidades"""
     
-    errors = []
-    for period in periods:
-        sum_cum = calculate_cumulative_returns(returns, period, 'sum')
-        prod_cum = calculate_cumulative_returns(returns, period, 'product')
-        error = calculate_win_probability(sum_cum) - calculate_win_probability(prod_cum)
-        errors.append(error)
+    etiquetas = ['1 Día', '1 Semana', '1 Mes', '3 Meses', '6 Meses', 
+                 '1 Año', '2 Años', '5 Años', '10 Años', '15 Años', '20 Años'][:len(df_prob)]
     
-    period_labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y'][:len(periods)]
+    z_data = [[p] for p in df_prob['prob_ganancia']]
     
-    colors = [COLORS['green'] if e <= 0.5 else COLORS['yellow'] if e <= 2 else COLORS['orange'] if e <= 5 else COLORS['red'] for e in errors]
+    fig = go.Figure(data=go.Heatmap(
+        z=df_prob['prob_ganancia'].values.reshape(-1, 1),
+        y=etiquetas,
+        x=['Prob. Ganancia'],
+        colorscale=[
+            [0.0, COLORS['red']],
+            [0.5, '#1e293b'],
+            [1.0, COLORS['green']]
+        ],
+        zmin=0,
+        zmax=100,
+        zmid=50,
+        text=[[f'{p:.1f}%'] for p in df_prob['prob_ganancia']],
+        texttemplate='%{text}',
+        textfont=dict(size=14, color='#f1f5f9', family='JetBrains Mono'),
+        hovertemplate='<b>%{y}</b><br>Probabilidad: %{z:.1f}%<extra></extra>',
+        showscale=False
+    ))
+    
+    layout = get_plotly_layout()
+    layout.update(
+        title=dict(
+            text=f'Probabilidad de Ganancia por Periodo — {ticker}',
+            font=dict(size=16, color='#f1f5f9'),
+            x=0.5,
+            xanchor='center'
+        ),
+        height=450,
+        xaxis=dict(showticklabels=False),
+        yaxis=dict(tickfont=dict(size=12, color='#94a3b8'))
+    )
+    fig.update_layout(**layout)
+    
+    return fig
+
+
+def crear_grafico_barras(df_prob: pd.DataFrame, ticker: str) -> go.Figure:
+    """Gráfico de barras apiladas"""
+    
+    etiquetas = ['1D', '1S', '1M', '3M', '6M', '1A', '2A', '5A', '10A', '15A', '20A'][:len(df_prob)]
     
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
-        x=period_labels,
-        y=errors,
-        marker=dict(
-            color=colors,
-            line=dict(width=0),
-            opacity=0.9
+        x=etiquetas,
+        y=df_prob['prob_ganancia'],
+        name='Ganancia',
+        marker=dict(color=COLORS['green'], opacity=0.9),
+        text=[f"{p:.0f}%" for p in df_prob['prob_ganancia']],
+        textposition='inside',
+        textfont=dict(color='white', size=11, family='JetBrains Mono'),
+        hovertemplate='<b>%{x}</b><br>Ganancia: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig.add_trace(go.Bar(
+        x=etiquetas,
+        y=df_prob['prob_perdida'],
+        name='Pérdida',
+        marker=dict(color=COLORS['red'], opacity=0.9),
+        text=[f"{p:.0f}%" for p in df_prob['prob_perdida']],
+        textposition='inside',
+        textfont=dict(color='white', size=11, family='JetBrains Mono'),
+        hovertemplate='<b>%{x}</b><br>Pérdida: %{y:.1f}%<extra></extra>'
+    ))
+    
+    layout = get_plotly_layout()
+    layout.update(
+        title=dict(
+            text=f'Distribución Ganancia/Pérdida — {ticker}',
+            font=dict(size=16, color='#f1f5f9'),
+            x=0.5,
+            xanchor='center'
         ),
-        text=[f'{e:.2f}%' for e in errors],
-        textposition='outside',
-        textfont=dict(color='#ffffff', size=12, family='JetBrains Mono'),
-        hovertemplate='<b>%{x}</b><br>Error: %{y:.2f} pp<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text='Calculation Error by Period (percentage points)', x=0.5),
-        xaxis_title='Holding Period',
-        yaxis_title='Error (pp)',
+        barmode='stack',
+        xaxis_title='Periodo de Tenencia',
+        yaxis_title='Probabilidad (%)',
         height=400,
-        showlegend=False
-    )
-    
-    return fig
-
-
-def create_path_simulation(initial_price: float = 100, n_periods: int = 20, volatility: float = 0.02, seed: int = 42) -> go.Figure:
-    """Create a visual simulation showing sum vs product divergence"""
-    
-    np.random.seed(seed)
-    
-    # Generate random returns
-    returns = np.random.normal(0, volatility, n_periods)
-    
-    # Calculate paths
-    sum_path = initial_price * (1 + np.cumsum(returns))
-    prod_path = initial_price * np.cumprod(1 + returns)
-    actual_prices = [initial_price] + list(prod_path)
-    sum_prices = [initial_price] + list(sum_path)
-    
-    periods = list(range(n_periods + 1))
-    
-    fig = go.Figure()
-    
-    # Actual price path
-    fig.add_trace(go.Scatter(
-        x=periods,
-        y=actual_prices,
-        name='Actual Price (Product)',
-        mode='lines',
-        line=dict(color=COLORS['green'], width=4),
-        fill='tozeroy',
-        fillcolor='rgba(0, 255, 136, 0.1)'
-    ))
-    
-    # Sum-implied path
-    fig.add_trace(go.Scatter(
-        x=periods,
-        y=sum_prices,
-        name='Implied by Sum',
-        mode='lines',
-        line=dict(color=COLORS['red'], width=3, dash='dash')
-    ))
-    
-    # Starting point
-    fig.add_trace(go.Scatter(
-        x=[0],
-        y=[initial_price],
-        mode='markers',
-        marker=dict(size=15, color=COLORS['blue'], symbol='diamond'),
-        name='Start',
-        showlegend=False
-    ))
-    
-    # End points
-    fig.add_trace(go.Scatter(
-        x=[n_periods, n_periods],
-        y=[actual_prices[-1], sum_prices[-1]],
-        mode='markers+text',
-        marker=dict(size=12, color=[COLORS['green'], COLORS['red']]),
-        text=[f'${actual_prices[-1]:.2f}', f'${sum_prices[-1]:.2f}'],
-        textposition='middle right',
-        textfont=dict(color='#ffffff', size=11),
-        showlegend=False
-    ))
-    
-    fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text='Price Path: Sum vs Product Method', x=0.5),
-        xaxis_title='Period',
-        yaxis_title='Price ($)',
-        height=450,
         legend=dict(
             orientation='h',
             yanchor='bottom',
@@ -431,334 +410,232 @@ def create_path_simulation(initial_price: float = 100, n_periods: int = 20, vola
             bgcolor='rgba(0,0,0,0)'
         )
     )
-    
-    return fig, returns, actual_prices[-1], sum_prices[-1]
-
-
-def create_distribution_comparison(returns: pd.Series, period: int) -> go.Figure:
-    """Create histogram comparison of cumulative returns"""
-    
-    sum_cum = calculate_cumulative_returns(returns, period, 'sum')
-    prod_cum = calculate_cumulative_returns(returns, period, 'product')
-    
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=('❌ Sum Method', '✓ Product Method'),
-        horizontal_spacing=0.1
-    )
-    
-    # Sum histogram
-    fig.add_trace(go.Histogram(
-        x=sum_cum * 100,
-        nbinsx=50,
-        marker=dict(color=COLORS['red'], opacity=0.7, line=dict(width=0)),
-        name='Sum'
-    ), row=1, col=1)
-    
-    # Product histogram
-    fig.add_trace(go.Histogram(
-        x=prod_cum * 100,
-        nbinsx=50,
-        marker=dict(color=COLORS['green'], opacity=0.7, line=dict(width=0)),
-        name='Product'
-    ), row=1, col=2)
-    
-    # Add vertical line at 0
-    for col in [1, 2]:
-        fig.add_vline(x=0, line=dict(color='#ffffff', width=2, dash='dash'), row=1, col=col)
-    
-    fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text=f'Distribution of {period}-Day Cumulative Returns', x=0.5),
-        showlegend=False,
-        height=400
-    )
-    
-    fig.update_xaxes(title_text='Return (%)', **PLOTLY_THEME['xaxis'])
-    fig.update_yaxes(title_text='Frequency', **PLOTLY_THEME['yaxis'])
+    fig.update_layout(**layout)
     
     return fig
 
 
-def create_heatmap(df: pd.DataFrame, tickers: list, periods: list) -> go.Figure:
-    """Create heatmap of win probabilities"""
+def crear_comparativa_activos(datos: pd.DataFrame, tickers: list, periodo: int) -> go.Figure:
+    """Comparativa de probabilidades entre activos"""
     
-    period_labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y'][:len(periods)]
-    
-    z_data = []
+    resultados = []
     for ticker in tickers:
-        row = []
-        returns = df[ticker].pct_change().dropna()
-        for period in periods:
-            if len(returns) >= period:
-                cum = calculate_cumulative_returns(returns, period, 'product')
-                row.append(calculate_win_probability(cum))
-            else:
-                row.append(np.nan)
-        z_data.append(row)
+        if ticker in datos.columns:
+            retornos = datos[ticker].pct_change().dropna()
+            if len(retornos) >= periodo:
+                cum_ret = calcular_retornos_acumulados(retornos, periodo)
+                prob_gan = (cum_ret > 0).sum() / len(cum_ret) * 100
+                resultados.append({'ticker': ticker, 'prob': prob_gan})
     
-    fig = go.Figure(data=go.Heatmap(
-        z=z_data,
-        x=period_labels,
-        y=tickers,
-        colorscale=[
-            [0.0, COLORS['red']],
-            [0.5, '#1a1a24'],
-            [1.0, COLORS['green']]
-        ],
-        zmid=50,
-        text=[[f'{val:.1f}%' if not np.isnan(val) else '' for val in row] for row in z_data],
-        texttemplate='%{text}',
-        textfont=dict(size=11, color='#ffffff'),
-        hovertemplate='<b>%{y}</b><br>Period: %{x}<br>Win Prob: %{z:.1f}%<extra></extra>',
-        colorbar=dict(
-            title='Win %',
-            titleside='right',
-            tickfont=dict(color='#8b8b9e'),
-            titlefont=dict(color='#8b8b9e')
-        )
+    if not resultados:
+        return None
+    
+    df = pd.DataFrame(resultados).sort_values('prob', ascending=True)
+    
+    colores = [COLORS['green'] if p >= 50 else COLORS['red'] for p in df['prob']]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=df['prob'],
+        y=df['ticker'],
+        orientation='h',
+        marker=dict(color=colores, opacity=0.85),
+        text=[f"{p:.1f}%" for p in df['prob']],
+        textposition='outside',
+        textfont=dict(color='#f1f5f9', size=11, family='JetBrains Mono'),
+        hovertemplate='<b>%{y}</b><br>Prob. Ganancia: %{x:.1f}%<extra></extra>'
     ))
     
-    fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text='Win Probability Heatmap (Correct Method)', x=0.5),
-        height=max(400, len(tickers) * 35),
-        xaxis_title='Holding Period',
-        yaxis_title='Asset'
+    # Línea de 50%
+    fig.add_vline(x=50, line=dict(color='#475569', width=2, dash='dot'))
+    
+    periodo_texto = {
+        252: '1 Año', 504: '2 Años', 1260: '5 Años', 20: '1 Mes', 60: '3 Meses'
+    }.get(periodo, f'{periodo} días')
+    
+    layout = get_plotly_layout()
+    layout.update(
+        title=dict(
+            text=f'Probabilidad de Ganancia a {periodo_texto}',
+            font=dict(size=16, color='#f1f5f9'),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(**layout['xaxis'], range=[0, 105]),
+        xaxis_title='Probabilidad (%)',
+        yaxis_title='',
+        height=max(350, len(df) * 40),
+        showlegend=False
     )
+    fig.update_layout(**layout)
     
     return fig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MAIN APP
+# APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     
-    # Hero Section
-    st.markdown('<h1 class="hero-title">📊 Return Compounding Explorer</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="hero-subtitle">Why summing returns is mathematically incorrect — and why it matters</p>', unsafe_allow_html=True)
+    # Header
+    st.markdown("""
+    <div class="hero-container">
+        <div class="hero-title">📊 Probabilidad de Ganancia</div>
+        <div class="hero-subtitle">Análisis histórico de rentabilidad por periodo de inversión</div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
-        st.markdown("## ⚙️ Configuration")
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+        st.markdown("## ⚙️ Configuración")
         
-        # Ticker selection
-        default_tickers = ['^GSPC', 'QQQ', 'IWM', 'AAPL', 'MSFT']
+        tickers_disponibles = {
+            'Índices': ['^GSPC', '^DJI', '^IXIC'],
+            'ETFs': ['SPY', 'QQQ', 'IWM', 'DIA', 'VOO'],
+            'Tech': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'],
+            'Finanzas': ['JPM', 'BAC', 'GS', 'V', 'MA']
+        }
+        
+        categoria = st.selectbox("Categoría", list(tickers_disponibles.keys()))
+        
         tickers = st.multiselect(
-            "Select Assets",
-            options=['^GSPC', '^DJI', '^IXIC', 'QQQ', 'IWM', 'SPY', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'],
-            default=default_tickers,
-            help="Choose assets to analyze"
+            "Activos",
+            options=tickers_disponibles[categoria],
+            default=tickers_disponibles[categoria][:3]
         )
         
         if not tickers:
-            tickers = default_tickers
+            tickers = ['^GSPC']
         
-        primary_ticker = st.selectbox(
-            "Primary Asset for Analysis",
-            options=tickers,
-            index=0
+        ticker_principal = st.selectbox("Activo Principal", tickers)
+        
+        st.markdown("---")
+        
+        anio_inicio = st.slider("Desde", 1990, 2020, 2000)
+        
+        st.markdown("---")
+        st.markdown("### 📊 Comparativa")
+        periodo_comp = st.selectbox(
+            "Periodo",
+            options=['1 Mes', '3 Meses', '1 Año', '2 Años', '5 Años'],
+            index=2
         )
         
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        
-        start_year = st.slider(
-            "Start Year",
-            min_value=1990,
-            max_value=2020,
-            value=2000
-        )
-        
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        
-        # Simulation controls
-        st.markdown("### 🎲 Simulation")
-        sim_volatility = st.slider(
-            "Daily Volatility (%)",
-            min_value=0.5,
-            max_value=5.0,
-            value=2.0,
-            step=0.1
-        ) / 100
-        
-        sim_seed = st.number_input(
-            "Random Seed",
-            min_value=1,
-            max_value=999,
-            value=42
-        )
+        mapa_periodos = {
+            '1 Mes': 20, '3 Meses': 60, '1 Año': 252, '2 Años': 504, '5 Años': 1260
+        }
+        periodo_seleccionado = mapa_periodos[periodo_comp]
     
-    # Load data
-    with st.spinner('Loading market data...'):
-        try:
-            data = load_data(tickers, f'{start_year}-01-01')
-            returns = data[primary_ticker].pct_change().dropna()
-        except Exception as e:
-            st.error(f"Error loading data: {e}")
+    # Cargar datos
+    with st.spinner(''):
+        datos = cargar_datos(tickers, f'{anio_inicio}-01-01')
+        
+        if datos.empty or ticker_principal not in datos.columns:
+            st.error("Error al cargar datos. Intenta con otros activos.")
             st.stop()
+        
+        retornos = datos[ticker_principal].pct_change().dropna()
     
-    # Define periods
-    periods = [1, 5, 20, 60, 120, 252, 252*2, 252*5, 252*10, 252*15, 252*20]
-    # Filter periods based on data length
-    max_period = len(returns) - 1
-    periods = [p for p in periods if p <= max_period]
+    # Periodos de análisis
+    periodos = [1, 5, 20, 60, 120, 252, 504, 1260, 2520, 3780, 5040]
+    periodos = [p for p in periodos if p <= len(retornos) - 1]
     
-    # The Error Explanation
-    st.markdown("---")
-    col1, col2 = st.columns(2)
+    # Calcular probabilidades
+    df_prob = calcular_probabilidades(retornos, periodos)
     
-    with col1:
-        st.markdown("""
-        <div class="error-box">
-            <h3 style="color: #ff3366; margin-top: 0;">❌ Incorrect: Summing Returns</h3>
-            <div class="formula-box">
-                R<sub>cumulative</sub> = r₁ + r₂ + r₃ + ... + rₙ
-            </div>
-            <p style="color: #8b8b9e; font-size: 0.95rem;">
-                Summing assumes returns are additive. But if you gain 10% then lose 10%, 
-                you don't break even — you lose money!
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+    if df_prob.empty:
+        st.warning("No hay suficientes datos para el análisis.")
+        st.stop()
     
-    with col2:
-        st.markdown("""
-        <div class="correct-box">
-            <h3 style="color: #00ff88; margin-top: 0;">✓ Correct: Compounding Returns</h3>
-            <div class="formula-box">
-                R<sub>cumulative</sub> = (1+r₁)(1+r₂)(1+r₃)...(1+rₙ) - 1
-            </div>
-            <p style="color: #8b8b9e; font-size: 0.95rem;">
-                Compounding captures the multiplicative nature of returns.
-                +10% then -10% = (1.10)(0.90) - 1 = <b>-1%</b>
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+    # Métricas principales
+    prob_1a = df_prob[df_prob['periodo'] == 252]['prob_ganancia'].values
+    prob_5a = df_prob[df_prob['periodo'] == 1260]['prob_ganancia'].values
+    prob_10a = df_prob[df_prob['periodo'] == 2520]['prob_ganancia'].values
     
-    # Simulation visualization
-    st.markdown("---")
-    st.markdown("## 🎬 Visual Simulation")
-    
-    fig_sim, sim_returns, actual_end, sum_end = create_path_simulation(
-        initial_price=100,
-        n_periods=20,
-        volatility=sim_volatility,
-        seed=int(sim_seed)
-    )
-    st.plotly_chart(fig_sim, use_container_width=True)
-    
-    # Simulation metrics
     col1, col2, col3, col4 = st.columns(4)
     
-    total_sum_return = sum(sim_returns) * 100
-    total_prod_return = (actual_end / 100 - 1) * 100
-    error = total_sum_return - total_prod_return
-    
     with col1:
+        val = f"{prob_1a[0]:.1f}%" if len(prob_1a) > 0 else "N/A"
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Sum Method</div>
-            <div class="metric-value red">{total_sum_return:+.2f}%</div>
+            <div class="metric-label">Prob. Ganancia 1 Año</div>
+            <div class="metric-value green">{val}</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col2:
+        val = f"{prob_5a[0]:.1f}%" if len(prob_5a) > 0 else "N/A"
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Product Method</div>
-            <div class="metric-value green">{total_prod_return:+.2f}%</div>
+            <div class="metric-label">Prob. Ganancia 5 Años</div>
+            <div class="metric-value green">{val}</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
+        val = f"{prob_10a[0]:.1f}%" if len(prob_10a) > 0 else "N/A"
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Calculation Error</div>
-            <div class="metric-value purple">{error:+.2f}pp</div>
+            <div class="metric-label">Prob. Ganancia 10 Años</div>
+            <div class="metric-value green">{val}</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col4:
+        n_years = len(retornos) / 252
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Price Difference</div>
-            <div class="metric-value blue">${abs(actual_end - sum_end):.2f}</div>
+            <div class="metric-label">Datos Históricos</div>
+            <div class="metric-value cyan">{n_years:.0f} años</div>
         </div>
         """, unsafe_allow_html=True)
     
-    # Main comparison chart
-    st.markdown("---")
-    st.markdown(f"## 📈 Win Probability Analysis — {primary_ticker}")
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    fig_comparison = create_comparison_chart(returns, periods, primary_ticker)
-    st.plotly_chart(fig_comparison, use_container_width=True)
+    # Gráfico principal
+    fig_principal = crear_grafico_probabilidades(df_prob, ticker_principal)
+    st.plotly_chart(fig_principal, use_container_width=True, config={'displayModeBar': False})
     
-    # Error magnitude
-    col1, col2 = st.columns([2, 1])
+    # Segunda fila de gráficos
+    col1, col2 = st.columns([1.2, 1])
     
     with col1:
-        fig_error = create_error_magnitude_chart(returns, periods)
-        st.plotly_chart(fig_error, use_container_width=True)
+        fig_barras = crear_grafico_barras(df_prob, ticker_principal)
+        st.plotly_chart(fig_barras, use_container_width=True, config={'displayModeBar': False})
     
     with col2:
-        st.markdown("""
-        <div class="metric-card" style="height: 100%;">
-            <h3 style="color: #00d4ff; margin-top: 0;">💡 Key Insight</h3>
-            <p style="color: #8b8b9e;">
-                The error compounds over time. For short periods (1 day), 
-                the difference is negligible. But for multi-year horizons, 
-                the sum method can overestimate win probability by 
-                <b style="color: #ff3366;">several percentage points</b>.
-            </p>
-            <p style="color: #8b8b9e; margin-top: 1rem;">
-                This matters for backtesting, risk management, and 
-                setting realistic expectations for long-term investing.
-            </p>
+        fig_heatmap = crear_heatmap(df_prob, ticker_principal)
+        st.plotly_chart(fig_heatmap, use_container_width=True, config={'displayModeBar': False})
+    
+    # Insight box
+    st.markdown("""
+    <div class="insight-box">
+        <div class="insight-title">💡 Conclusión</div>
+        <div class="insight-text">
+            A mayor horizonte temporal, mayor es la probabilidad de obtener rentabilidad positiva.
+            Históricamente, mantener inversiones a largo plazo (>5 años) ha resultado en ganancias 
+            en la gran mayoría de los casos para índices diversificados.
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Distribution comparison
-    st.markdown("---")
-    st.markdown("## 📊 Return Distribution Comparison")
-    
-    period_options = {
-        '1 Month (20 days)': 20,
-        '1 Year (252 days)': 252,
-        '5 Years (1260 days)': 1260,
-        '10 Years (2520 days)': 2520
-    }
-    
-    available_periods = {k: v for k, v in period_options.items() if v <= max_period}
-    
-    if available_periods:
-        selected_period_label = st.selectbox(
-            "Select Period for Distribution",
-            options=list(available_periods.keys())
-        )
-        selected_period = available_periods[selected_period_label]
-        
-        fig_dist = create_distribution_comparison(returns, selected_period)
-        st.plotly_chart(fig_dist, use_container_width=True)
-    
-    # Heatmap
+    # Comparativa entre activos
     if len(tickers) > 1:
-        st.markdown("---")
-        st.markdown("## 🗺️ Multi-Asset Heatmap")
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### 📈 Comparativa entre Activos")
         
-        fig_heatmap = create_heatmap(data, tickers, periods)
-        st.plotly_chart(fig_heatmap, use_container_width=True)
+        fig_comp = crear_comparativa_activos(datos, tickers, periodo_seleccionado)
+        if fig_comp:
+            st.plotly_chart(fig_comp, use_container_width=True, config={'displayModeBar': False})
     
     # Footer
-    st.markdown("---")
     st.markdown("""
-    <div style="text-align: center; color: #8b8b9e; padding: 2rem 0;">
-        <p style="font-size: 0.9rem;">
-            Built with Streamlit & Plotly | Data from Yahoo Finance<br>
-            <span style="color: #00d4ff;">BQuant Finance</span> — Quantitative Analysis Tools
-        </p>
+    <div class="footer">
+        <a href="https://bquantfinance.com" target="_blank">bquantfinance.com</a> · 
+        <a href="https://twitter.com/Gsnchez" target="_blank">@Gsnchez</a>
+        <br><span style="opacity: 0.6;">Datos: Yahoo Finance · Retornos calculados con capitalización compuesta</span>
     </div>
     """, unsafe_allow_html=True)
 

@@ -491,23 +491,21 @@ def main():
     with st.sidebar:
         st.markdown("## ⚙️ Configuración")
         
-        tickers_disponibles = {
-            'Índices': ['^GSPC', '^DJI', '^IXIC'],
-            'ETFs': ['SPY', 'QQQ', 'IWM', 'DIA', 'VOO'],
-            'Tech': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'],
-            'Finanzas': ['JPM', 'BAC', 'GS', 'V', 'MA']
-        }
-        
-        categoria = st.selectbox("Categoría", list(tickers_disponibles.keys()))
-        
-        tickers = st.multiselect(
-            "Activos",
-            options=tickers_disponibles[categoria],
-            default=tickers_disponibles[categoria][:3]
+        st.markdown("##### Tickers")
+        tickers_input = st.text_area(
+            "Introduce los tickers separados por coma o espacio",
+            value="^GSPC, QQQ, AAPL",
+            height=80,
+            help="Ejemplos: ^GSPC, AAPL, MSFT, BTC-USD, EURUSD=X"
         )
+        
+        # Parsear tickers
+        tickers_raw = tickers_input.replace(',', ' ').replace(';', ' ').split()
+        tickers = [t.strip().upper() for t in tickers_raw if t.strip()]
         
         if not tickers:
             tickers = ['^GSPC']
+            st.warning("Usando ^GSPC por defecto")
         
         ticker_principal = st.selectbox("Activo Principal", tickers)
         

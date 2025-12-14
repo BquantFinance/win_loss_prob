@@ -339,7 +339,7 @@ if p1y is not None and p10y is not None:
         <div class="insight-text">
             Holding <strong>{main_ticker}</strong> for 10 years instead of 1 year increases your win probability 
             from <strong>{p1y:.1f}%</strong> to <strong>{p10y:.1f}%</strong> — 
-            a <strong>+{improvement:.1f}pp</strong> improvement. Time in the market beats timing the market.
+            a <strong>+{improvement:.1f}pp</strong> improvement.
         </div>
     </div>
     ''', unsafe_allow_html=True)

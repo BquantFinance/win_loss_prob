@@ -51,15 +51,11 @@ st.markdown("""
     .metric-val.green { color: var(--green); }
     .metric-val.blue { color: var(--blue); }
     
-    .section-head { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem; }
+    .section-head { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin: 2rem 0 1rem 0; }
     
-    .tbl { width: 100%; border-collapse: collapse; }
-    .tbl th { text-align: left; padding: 0.6rem 0.8rem; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); font-weight: 500; }
-    .tbl td { padding: 0.6rem 0.8rem; font-family: 'IBM Plex Mono', monospace !important; font-size: 0.85rem; color: var(--text); border-bottom: 1px solid var(--border); }
-    .tbl tr:last-child td { border-bottom: none; }
-    .tag { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .tag.g { background: rgba(34, 197, 94, 0.15); color: var(--green); }
-    .tag.r { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+    .insight { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin: 1.5rem 0; }
+    .insight-text { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+    .insight-text strong { color: var(--green); }
     
     .foot { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem; }
     .foot a { color: var(--blue); text-decoration: none; }
@@ -70,15 +66,18 @@ st.markdown("""
     .stTextInput > div > div > input { background: var(--bg) !important; border-color: var(--border) !important; color: var(--text) !important; }
     .stSelectbox > div > div { background: var(--bg) !important; border-color: var(--border) !important; }
     div[data-baseweb="select"] > div { background: var(--bg) !important; border-color: var(--border) !important; }
-    .stSlider label, .stTextInput label, .stSelectbox label { font-size: 0.7rem !important; color: var(--muted) !important; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stTextInput label, .stSelectbox label { font-size: 0.7rem !important; color: var(--muted) !important; text-transform: uppercase; letter-spacing: 0.05em; }
     
     @media (max-width: 768px) { .metrics { grid-template-columns: repeat(2, 1fr); } .main .block-container { padding: 1rem; } }
 </style>
 """, unsafe_allow_html=True)
 
+# Colors
 GREEN = '#22c55e'
 RED = '#ef4444'
+BLUE = '#3b82f6'
 GRID = 'rgba(255,255,255,0.03)'
+LABELS = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y']
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -101,97 +100,173 @@ def calc_probs(returns, periods):
             n = len(cum)
             if n > 0:
                 win = (cum > 0).sum() / n * 100
-                results.append({'period': p, 'win': round(win, 1), 'loss': round(100 - win, 1)})
+                results.append({'period': p, 'win': round(win, 1)})
     return pd.DataFrame(results)
 
 
-def chart_main(df, ticker):
-    labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y'][:len(df)]
+def chart_area(df, ticker):
+    """Single area chart - win probability only"""
+    labels = LABELS[:len(df)]
     
     fig = go.Figure()
+    
+    # Gradient fill area
     fig.add_trace(go.Scatter(
-        x=labels, y=df['win'], name='Win %', mode='lines+markers',
-        line=dict(color=GREEN, width=2.5), marker=dict(size=8, color=GREEN),
-        fill='tozeroy', fillcolor='rgba(34, 197, 94, 0.1)', hovertemplate='%{y:.1f}%<extra></extra>'
+        x=labels, y=df['win'],
+        mode='lines',
+        line=dict(color=GREEN, width=3),
+        fill='tozeroy',
+        fillgradient=dict(
+            type='vertical',
+            colorscale=[[0, 'rgba(34, 197, 94, 0.05)'], [1, 'rgba(34, 197, 94, 0.3)']]
+        ),
+        hovertemplate='<b>%{x}</b><br>Win: %{y:.1f}%<extra></extra>'
     ))
+    
+    # Add markers on top
     fig.add_trace(go.Scatter(
-        x=labels, y=df['loss'], name='Loss %', mode='lines+markers',
-        line=dict(color=RED, width=2.5), marker=dict(size=8, color=RED), hovertemplate='%{y:.1f}%<extra></extra>'
+        x=labels, y=df['win'],
+        mode='markers',
+        marker=dict(size=10, color=GREEN, line=dict(width=2, color='#09090b')),
+        hoverinfo='skip',
+        showlegend=False
     ))
+    
+    # 50% reference line
+    fig.add_hline(y=50, line=dict(color='#3f3f46', width=1, dash='dot'),
+                  annotation_text="50%", annotation_position="right",
+                  annotation=dict(font_color='#52525b', font_size=10))
+    
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
+        margin=dict(l=50, r=30, t=40, b=50),
+        title=dict(text=f'Win Probability · {ticker}', font=dict(size=14, color='#a1a1aa'), x=0, xanchor='left'),
+        xaxis=dict(title='Holding Period', gridcolor=GRID, linecolor='#27272a', 
+                   tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
+        yaxis=dict(title='Probability (%)', range=[0, 105], gridcolor=GRID, linecolor='#27272a',
+                   tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
+        height=400,
+        showlegend=False,
+        hovermode='x unified',
+        hoverlabel=dict(bgcolor='#18181b', font_size=12, font_family='IBM Plex Sans')
+    )
+    return fig
+
+
+def chart_heatmap_strip(df):
+    """Horizontal heatmap strip - visual summary"""
+    labels = LABELS[:len(df)]
+    probs = df['win'].values
+    
+    # Create color scale from red to green through neutral
+    def prob_to_color(p):
+        if p < 50:
+            # Red zone
+            intensity = (50 - p) / 50
+            return f'rgba(239, 68, 68, {0.3 + intensity * 0.7})'
+        else:
+            # Green zone
+            intensity = (p - 50) / 50
+            return f'rgba(34, 197, 94, {0.3 + intensity * 0.7})'
+    
+    colors = [prob_to_color(p) for p in probs]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=labels,
+        y=[1] * len(labels),
+        marker=dict(color=colors, line=dict(width=0)),
+        text=[f'{p:.0f}%' for p in probs],
+        textposition='inside',
+        textfont=dict(size=12, color='white', family='IBM Plex Mono'),
+        hovertemplate='<b>%{x}</b>: %{text}<extra></extra>',
+        showlegend=False
+    ))
+    
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
+        margin=dict(l=0, r=0, t=10, b=30),
+        xaxis=dict(tickfont=dict(color='#71717a', size=10), showgrid=False, linecolor='rgba(0,0,0,0)'),
+        yaxis=dict(visible=False, showgrid=False),
+        height=80,
+        bargap=0.08,
+        hoverlabel=dict(bgcolor='#18181b', font_size=11)
+    )
+    return fig
+
+
+def chart_slope(data, tickers, periods_to_show):
+    """Slope chart - multi-asset comparison across time horizons"""
+    
+    # Calculate probabilities for each ticker at each period
+    results = []
+    for t in tickers:
+        if t in data.columns:
+            ret = data[t].pct_change().dropna()
+            for p in periods_to_show:
+                if len(ret) >= p:
+                    cum = (1 + ret).rolling(window=p).apply(np.prod, raw=True).dropna() - 1
+                    if len(cum) > 0:
+                        prob = (cum > 0).sum() / len(cum) * 100
+                        results.append({'ticker': t, 'period': p, 'win': prob})
+    
+    if not results:
+        return None
+    
+    df = pd.DataFrame(results)
+    
+    period_labels = {1: '1D', 5: '1W', 20: '1M', 60: '3M', 120: '6M', 
+                     252: '1Y', 504: '2Y', 1260: '5Y', 2520: '10Y'}
+    
+    # Color palette for multiple tickers
+    palette = ['#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16']
+    
+    fig = go.Figure()
+    
+    for i, ticker in enumerate(df['ticker'].unique()):
+        ticker_data = df[df['ticker'] == ticker].sort_values('period')
+        x_labels = [period_labels.get(p, f'{p}D') for p in ticker_data['period']]
+        color = palette[i % len(palette)]
+        
+        # Line
+        fig.add_trace(go.Scatter(
+            x=x_labels, y=ticker_data['win'],
+            mode='lines+markers',
+            name=ticker,
+            line=dict(color=color, width=2.5),
+            marker=dict(size=8, color=color, line=dict(width=2, color='#09090b')),
+            hovertemplate=f'<b>{ticker}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>'
+        ))
+    
+    # 50% reference
     fig.add_hline(y=50, line=dict(color='#3f3f46', width=1, dash='dot'))
     
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
-        margin=dict(l=50, r=30, t=30, b=50),
-        xaxis=dict(title='Holding Period', gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
-        yaxis=dict(title='Probability (%)', range=[0, 105], gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
+        margin=dict(l=50, r=30, t=40, b=50),
+        title=dict(text='Win Probability by Asset', font=dict(size=14, color='#a1a1aa'), x=0, xanchor='left'),
+        xaxis=dict(title='Holding Period', gridcolor=GRID, linecolor='#27272a',
+                   tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
+        yaxis=dict(title='Probability (%)', range=[30, 105], gridcolor=GRID, linecolor='#27272a',
+                   tickfont=dict(color='#71717a'), title_font=dict(color='#71717a', size=11)),
         height=380,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, bgcolor='rgba(0,0,0,0)', font=dict(size=11)),
-        hovermode='x unified', hoverlabel=dict(bgcolor='#18181b', font_size=11)
-    )
-    return fig
-
-
-def chart_bars(df):
-    labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y'][:len(df)]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=labels, y=df['win'], name='Win', marker=dict(color=GREEN, opacity=0.9),
-        text=[f"{v:.0f}" for v in df['win']], textposition='inside', textfont=dict(size=9, color='white'), hovertemplate='Win: %{y:.1f}%<extra></extra>'
-    ))
-    fig.add_trace(go.Bar(
-        x=labels, y=df['loss'], name='Loss', marker=dict(color=RED, opacity=0.9),
-        text=[f"{v:.0f}" for v in df['loss']], textposition='inside', textfont=dict(size=9, color='white'), hovertemplate='Loss: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
-        margin=dict(l=40, r=20, t=20, b=40), barmode='stack', height=280, showlegend=False,
-        xaxis=dict(gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#71717a')),
-        yaxis=dict(gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#71717a')),
+        legend=dict(
+            orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0,
+            bgcolor='rgba(0,0,0,0)', font=dict(size=11)
+        ),
+        hovermode='x unified',
         hoverlabel=dict(bgcolor='#18181b', font_size=11)
     )
     return fig
 
 
-def chart_compare(data, tickers, period):
-    results = []
-    for t in tickers:
-        if t in data.columns:
-            ret = data[t].pct_change().dropna()
-            if len(ret) >= period:
-                cum = (1 + ret).rolling(window=period).apply(np.prod, raw=True).dropna() - 1
-                if len(cum) > 0:
-                    prob = (cum > 0).sum() / len(cum) * 100
-                    results.append({'ticker': t, 'prob': prob})
-    
-    if not results:
-        return None
-    
-    df = pd.DataFrame(results).sort_values('prob', ascending=True)
-    colors = [GREEN if p >= 50 else RED for p in df['prob']]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df['prob'], y=df['ticker'], orientation='h', marker=dict(color=colors, opacity=0.9),
-        text=[f"{p:.1f}%" for p in df['prob']], textposition='outside', textfont=dict(size=11, color='#a1a1aa'),
-        hovertemplate='<b>%{y}</b>: %{x:.1f}%<extra></extra>'
-    ))
-    fig.add_vline(x=50, line=dict(color='#3f3f46', width=1, dash='dot'))
-    
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='IBM Plex Sans', color='#fafafa', size=11),
-        margin=dict(l=70, r=50, t=20, b=30), height=max(180, len(df) * 40), showlegend=False,
-        xaxis=dict(range=[0, 105], gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#71717a')),
-        yaxis=dict(gridcolor=GRID, linecolor='#27272a', tickfont=dict(color='#a1a1aa', size=11)),
-        hoverlabel=dict(bgcolor='#18181b', font_size=11)
-    )
-    return fig
-
+# ═══════════════════════════════════════════════════════════════════════════════
+# APP
+# ═══════════════════════════════════════════════════════════════════════════════
 
 # Header
 st.markdown('<div class="header"><div class="title">📊 Win Probability</div><div class="subtitle">Historical probability of positive returns by holding period</div></div>', unsafe_allow_html=True)
@@ -213,7 +288,7 @@ if not tickers:
 with c3:
     main_ticker = st.selectbox("ANALYZE", tickers)
 
-# Load
+# Load data
 data = load_data(tickers, f'{year}-01-01')
 
 if data.empty or main_ticker not in data.columns:
@@ -226,6 +301,7 @@ if len(returns) < 20:
     st.error("Not enough data.")
     st.stop()
 
+# Calculate
 all_p = [1, 5, 20, 60, 120, 252, 504, 1260, 2520, 3780, 5040]
 periods = [p for p in all_p if p <= len(returns) - 1]
 df_prob = calc_probs(returns, periods)
@@ -257,36 +333,38 @@ st.markdown(f'''
 </div>
 ''', unsafe_allow_html=True)
 
-# Main chart
-fig_main = chart_main(df_prob, main_ticker)
-st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
+# Heatmap strip
+st.markdown('<div class="section-head">At a Glance</div>', unsafe_allow_html=True)
+fig_strip = chart_heatmap_strip(df_prob)
+st.plotly_chart(fig_strip, use_container_width=True, config={'displayModeBar': False})
 
-# Second row
-col1, col2 = st.columns([1.4, 1])
+# Main area chart
+fig_area = chart_area(df_prob, main_ticker)
+st.plotly_chart(fig_area, use_container_width=True, config={'displayModeBar': False})
 
-with col1:
-    st.markdown('<div class="section-head">Distribution</div>', unsafe_allow_html=True)
-    fig_bars = chart_bars(df_prob)
-    st.plotly_chart(fig_bars, use_container_width=True, config={'displayModeBar': False})
+# Insight
+if p1y is not None and p10y is not None:
+    improvement = p10y - p1y
+    st.markdown(f'''
+    <div class="insight">
+        <div class="insight-text">
+            Holding <strong>{main_ticker}</strong> for 10 years instead of 1 year increases your probability of profit 
+            from <strong>{p1y:.1f}%</strong> to <strong>{p10y:.1f}%</strong> — 
+            a <strong>+{improvement:.1f}pp</strong> improvement. Time in the market reduces risk.
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
 
-with col2:
-    st.markdown('<div class="section-head">Details</div>', unsafe_allow_html=True)
-    labels = ['1D', '1W', '1M', '3M', '6M', '1Y', '2Y', '5Y', '10Y', '15Y', '20Y']
-    
-    rows_html = ""
-    for idx, r in enumerate(df_prob.itertuples()):
-        lbl = labels[idx] if idx < len(labels) else f"{r.period}D"
-        tag_class = 'g' if r.win >= 50 else 'r'
-        rows_html += f'<tr><td>{lbl}</td><td><span class="tag {tag_class}">{r.win:.1f}%</span></td><td>{r.loss:.1f}%</td></tr>'
-    
-    st.markdown(f'<table class="tbl"><thead><tr><th>Period</th><th>Win</th><th>Loss</th></tr></thead><tbody>{rows_html}</tbody></table>', unsafe_allow_html=True)
-
-# Comparison
+# Slope chart for multi-asset comparison
 if len(tickers) > 1:
-    st.markdown('<div class="section-head" style="margin-top:2rem;">Comparison · 1 Year Win Rate</div>', unsafe_allow_html=True)
-    fig_c = chart_compare(data, tickers, 252)
-    if fig_c is not None:
-        st.plotly_chart(fig_c, use_container_width=True, config={'displayModeBar': False})
+    st.markdown('<div class="section-head">Multi-Asset Comparison</div>', unsafe_allow_html=True)
+    
+    # Use key periods for cleaner visualization
+    key_periods = [p for p in [20, 252, 1260, 2520] if p <= len(returns) - 1]
+    
+    fig_slope = chart_slope(data, tickers, key_periods)
+    if fig_slope is not None:
+        st.plotly_chart(fig_slope, use_container_width=True, config={'displayModeBar': False})
 
 # Footer
 st.markdown('<div class="foot"><a href="https://bquantfinance.com" target="_blank">bquantfinance.com</a> · <a href="https://twitter.com/Gsnchez" target="_blank">@Gsnchez</a></div>', unsafe_allow_html=True)
